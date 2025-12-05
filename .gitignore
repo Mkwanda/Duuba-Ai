@@ -3,3 +3,52 @@
 /.ipynb_checkpoints
 /ipynb_checkpoints
 .ipynb_checkpoints
+__pycache__/
+*.py[cod]
+*.so
+*.egg
+*.egg-info/
+.env
+.venv
+venv/
+ENV/
+env/
+.envrc
+.pytest_cache/
+
+# Virtual environments
+cod/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Model checkpoints / exports
+Cocoa/Tensorflow/workspace/models/*/checkpoint
+Cocoa/Tensorflow/workspace/models/*/train
+Cocoa/Tensorflow/workspace/models/*/eval
+
+# Large exports
+*/export/
+*/tfliteexport/
+*/tfjsexport/
+
+# Secrets
+*.pem
+*.key
+
+# Streamlit cache
+.streamlit/
+data/
+upload_images/
+Cocoa/
+my_ssd_mobnetpod/
+jax/
+*.zip
+*.tar.gz
+*.h5
+*.pb
+*.tflite
+checkpoint
+train/
+eval/

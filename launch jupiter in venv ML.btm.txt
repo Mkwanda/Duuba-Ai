@@ -1,0 +1,80 @@
+ECHO ON
+cd C:\Users\owner\Desktop\Machine Learning\TFODCourse
+
+
+.\cod\Scripts\activate 
+
+3CF129AA-13EB-4DFC-B7CD-E1A26BA8AAD3.JPG
+
+29398718150_0555d48b87_b
+
+Cocoapods-300x229
+
+BARAKAT@6z COCOA Train model - LIVE VIEW.py
+
+jupyter notebook
+................
+Labelling app path
+Cocoa\Tensorflow\labelimg
+python labelImg.py
+
+
+C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin
+
+C:\Program Files (x86)\Microsoft Visual Studio 12.0\VC\bin
+
+C:\Users\owner\AppData\Local\Programs\Python\Python310\Scripts\
+
+C:\Users\owner\AppData\Local\Programs\Python\Python310
+
+C:\Users\owner\AppData\Local\Programs\Microsoft VS Code\bin
+
+C:\Users\owner\AppData\Local\Programs\
+......................
+LINUX
+
+cd /mnt/c/Users/owner/Desktop/Machine\ Learning/TFODCourse
+
+source cod/bin/activate
+
+
+
+det_num = detections['detection_classes']+label_id_offset
+det_score = detections['detection_scores']
+det_score1 = det_score[0]*100
+det_score2 = det_score[1]*100
+
+
+def healthy_msg(score1,score2):
+    score1= score1.round()
+    score2= score2.round()
+    if score1 > 50.00:
+        print(f'Cocoa is {score1}% HEALTHY')
+    else:
+        pass
+    if score2 > 50.00:
+        print(f'Cocoa is {score2}% HEALTHY')
+    else:
+        pass 
+    
+def infected_msg(score1,score2):
+    score1= score1.round()
+    score2= score2.round()
+    if score1 > 50.00:
+        print(f'Cocoa is {score1}% INFECTED')
+    else:
+        pass
+    if score2 > 50.00:
+        print(f'Cocoa is {score2}% INFECTED')
+    else:
+        pass
+
+
+
+
+if det_num[0] and det_num[1] == 1:
+    healthy_msg(det_score1,det_score2)
+elif det_num[0] and det_num[1] == 2:
+    infected_msg(det_score1,det_score2)
+else:
+    print('No detection seen Please upload new image')    

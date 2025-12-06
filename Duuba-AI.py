@@ -149,34 +149,47 @@ if not os.path.exists(files['LABELMAP']):
 
 # -----------------------------
 # Load trained detection model from checkpoint
-# -----------------------------
-import tensorflow as tf
+# ----------------------------- 
+# These imports will be deferred until model loading is actually needed
+TFOD_AVAILABLE = False
 
-# Try importing TF Object Detection API
-try:
-    from object_detection.utils import label_map_util
-    from object_detection.utils import visualization_utils as viz_utils
-    from object_detection.builders import model_builder
-    from object_detection.utils import config_util as od_config_util
-    TFOD_AVAILABLE = True
-except ImportError:
-    st.error("""
-    ⚠️ TensorFlow Object Detection API not installed.
-    
-    For local development, install with:
-    ```bash
-    pip install tf-models-official
-    ```
-    """)
-    TFOD_AVAILABLE = False
-    st.stop()
+def ensure_tfod_available():
+    """Ensure TensorFlow Object Detection API is available."""
+    global TFOD_AVAILABLE
+    if not TFOD_AVAILABLE:
+        try:
+            import tensorflow as tf
+            from object_detection.utils import label_map_util
+            from object_detection.utils import visualization_utils as viz_utils
+            from object_detection.builders import model_builder
+            from object_detection.utils import config_util as od_config_util
+            TFOD_AVAILABLE = True
+            return tf, label_map_util, viz_utils, model_builder, od_config_util
+        except ImportError as e:
+            st.error(f"""
+            ⚠️ TensorFlow Object Detection API not installed.
+            
+            Error: {str(e)}
+            
+            For local development, install with:
+            ```bash
+            pip install tensorflow tf-models-official
+            ```
+            
+            On Heroku, TensorFlow will be installed automatically on first deployment.
+            """)
+            st.stop()
+    return None
 
 # Build the model and restore weights from SavedModel (cached for fast reruns)
 @st.cache_resource
 def load_model():
     """Load the detection model from SavedModel format (cached)."""
     # Ensure TensorFlow is available
-    tf = ensure_tensorflow()
+    result = ensure_tfod_available()
+    if result is None:
+        st.stop()
+    tf, label_map_util, viz_utils, model_builder, od_config_util = result
     
     savedmodel_dir = os.path.join(paths['CHECKPOINT_PATH'], 'export', 'saved_model')
     

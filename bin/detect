@@ -1,0 +1,3 @@
+#!/bin/bash
+# Heroku buildpack detection
+echo "Using Python buildpack"

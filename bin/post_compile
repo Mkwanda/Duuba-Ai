@@ -1,0 +1,16 @@
+#!/bin/bash
+# Heroku post-compile hook to optimize slug size
+set -e
+
+echo "-----> Optimizing slug size..."
+
+# Remove pip cache and unnecessary files
+rm -rf ~/.cache
+rm -rf /tmp/*
+
+# Remove test files from TensorFlow
+find $HOME/.heroku/python/lib/python*/site-packages/tensorflow -type d -name tests -exec rm -rf {} + 2>/dev/null || true
+find $HOME/.heroku/python/lib/python*/site-packages/tensorflow -type d -name "*test*" -exec rm -rf {} + 2>/dev/null || true
+
+# Compress remaining files
+echo "-----> Slug optimization complete"

@@ -4,3 +4,4 @@ Pillow
 gdown
 requests
 scikit-image
+tensorflow-cpu>=2.13

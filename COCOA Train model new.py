@@ -272,7 +272,7 @@ if IMAGE_PATH is not None:
         raise
     finally:
         # keep status for a short while then clear (non-blocking)
-        pass
+        pass 
 
     # Post-process detection outputs
     num_detections = int(detections.pop('num_detections'))

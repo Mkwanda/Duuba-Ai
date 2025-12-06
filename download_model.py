@@ -25,6 +25,11 @@ try:
 except Exception:
     requests = None
 
+try:
+    import gdown
+except Exception:
+    gdown = None
+
 
 def download_and_extract(url: str, dest: Path):
     dest.mkdir(parents=True, exist_ok=True)
@@ -35,29 +40,43 @@ def download_and_extract(url: str, dest: Path):
     drive_match = re.search(r'd/([a-zA-Z0-9_-]+)', url)
     if drive_match:
         file_id = drive_match.group(1)
-        direct_url = f'https://drive.google.com/uc?export=download&id={file_id}'
-        # Prefer requests for handling large-file confirm tokens
-        if requests:
-            session = requests.Session()
-            response = session.get(direct_url, stream=True)
-            token = None
-            for k, v in response.cookies.items():
-                if k.startswith('download_warning'):
-                    token = v
-                    break
-            if token:
-                params = {'id': file_id, 'export': 'download', 'confirm': token}
-                response = session.get('https://drive.google.com/uc', params=params, stream=True)
-
-            with open(archive_path, 'wb') as f:
-                for chunk in response.iter_content(chunk_size=32768):
-                    if chunk:
-                        f.write(chunk)
-            print('Download finished.')
+        # Prefer gdown for Google Drive links; it handles large-file confirmation tokens
+        if gdown:
+            print('Detected Google Drive link; using gdown to download...')
+            out = str(archive_path)
+            # gdown accepts either the share URL or the uc?id= style URL
+            try:
+                gdown.download(url, out, quiet=False)
+            except Exception:
+                # try direct uc URL
+                uc = f'https://drive.google.com/uc?id={file_id}&export=download'
+                gdown.download(uc, out, quiet=False)
+            print('Download finished (gdown).')
         else:
-            # Fallback to direct uc link via urllib (may fail on large files requiring confirmation)
-            urllib.request.urlretrieve(direct_url, archive_path)
-            print('Download finished (urllib fallback).')
+            file_id = drive_match.group(1)
+            direct_url = f'https://drive.google.com/uc?export=download&id={file_id}'
+            # Prefer requests for handling large-file confirm tokens
+            if requests:
+                session = requests.Session()
+                response = session.get(direct_url, stream=True)
+                token = None
+                for k, v in response.cookies.items():
+                    if k.startswith('download_warning'):
+                        token = v
+                        break
+                if token:
+                    params = {'id': file_id, 'export': 'download', 'confirm': token}
+                    response = session.get('https://drive.google.com/uc', params=params, stream=True)
+
+                with open(archive_path, 'wb') as f:
+                    for chunk in response.iter_content(chunk_size=32768):
+                        if chunk:
+                            f.write(chunk)
+                print('Download finished.')
+            else:
+                # Fallback to direct uc link via urllib (may fail on large files requiring confirmation)
+                urllib.request.urlretrieve(direct_url, archive_path)
+                print('Download finished (urllib fallback).')
         # proceed to extraction below
     else:
         urllib.request.urlretrieve(url, archive_path)
@@ -72,8 +91,23 @@ def download_and_extract(url: str, dest: Path):
                 zf.extractall(path=dest)
         else:
             # Not an archive: move into place (single file)
-            shutil.move(str(archive_path), str(dest / Path(url).name))
-            print('Saved single-file model to', dest)
+            # Use a safe filename (avoid characters like ? on Windows).
+            if drive_match:
+                safe_name = f'model_{file_id}.bin'
+            else:
+                # derive a safe name from the URL path
+                try:
+                    candidate = Path(urllib.request.urlparse(url).path).name
+                    if candidate:
+                        safe_name = re.sub(r'[^A-Za-z0-9._-]', '_', candidate)
+                    else:
+                        safe_name = 'model_download.bin'
+                except Exception:
+                    safe_name = 'model_download.bin'
+
+            dst_file = dest / safe_name
+            shutil.move(str(archive_path), str(dst_file))
+            print('Saved single-file model to', dst_file)
     finally:
         if archive_path.exists():
             try:

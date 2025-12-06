@@ -16,9 +16,22 @@ from pathlib import Path
 
 # Third-party imports
 import streamlit as st
-import numpy as np
-import cv2
-from PIL import Image
+
+# Lazy imports for heavy packages
+try:
+    import numpy as np
+except ImportError:
+    np = None
+
+try:
+    import cv2
+except ImportError:
+    cv2 = None
+
+try:
+    from PIL import Image
+except ImportError:
+    Image = None
 
 # TensorFlow will be imported lazily when needed
 tensorflow_available = False
@@ -27,7 +40,49 @@ try:
     tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
     tensorflow_available = True
 except ImportError:
-    st.warning("⚠️ TensorFlow not yet installed. It may take a few minutes on first load...")
+    pass
+
+# Check all dependencies are available
+def check_dependencies():
+    """Verify all required packages are installed."""
+    missing = []
+    if np is None:
+        missing.append("numpy")
+    if cv2 is None:
+        missing.append("opencv-python-headless")
+    if Image is None:
+        missing.append("Pillow")
+    if not tensorflow_available:
+        missing.append("tensorflow")
+    
+    if missing:
+        st.error(f"""
+        ❌ Missing dependencies: {', '.join(missing)}
+        
+        These packages are being installed. Please refresh this page in a moment.
+        If the error persists after 5 minutes, the build environment may have timed out.
+        """)
+        return False
+    return True
+
+# Check dependencies on app startup
+if not check_dependencies():
+    st.stop()
+
+# Now it's safe to use these imports
+import numpy as np
+import cv2
+from PIL import Image
+
+# Re-import TensorFlow if needed
+if not tensorflow_available:
+    try:
+        import tensorflow as tf
+        tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+        tensorflow_available = True
+    except ImportError:
+        st.error("TensorFlow import failed even after dependency check. Please refresh the page.")
+        st.stop()
 
 # -----------------------------
 # Configuration / constants

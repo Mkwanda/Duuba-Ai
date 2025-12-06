@@ -1,9 +1,8 @@
-streamlit==1.24.1
+﻿streamlit==1.24.1
 numpy
 opencv-python-headless
 Pillow
-tensorflow==2.13.0
+tensorflow==2.10.0
 protobuf==3.20.3
-# For robust Google Drive downloads
 gdown
 requests

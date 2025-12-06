@@ -52,8 +52,6 @@ def check_dependencies():
         missing.append("opencv-python-headless")
     if Image is None:
         missing.append("Pillow")
-    if not tensorflow_available:
-        missing.append("tensorflow")
     
     if missing:
         st.error(f"""
@@ -74,15 +72,19 @@ import numpy as np
 import cv2
 from PIL import Image
 
-# Re-import TensorFlow if needed
-if not tensorflow_available:
-    try:
-        import tensorflow as tf
-        tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-        tensorflow_available = True
-    except ImportError:
-        st.error("TensorFlow import failed even after dependency check. Please refresh the page.")
-        st.stop()
+# TensorFlow will be imported when model is loaded (lazy import)
+def ensure_tensorflow():
+    """Ensure TensorFlow is available, install if needed."""
+    global tensorflow_available, tf
+    if not tensorflow_available:
+        try:
+            import tensorflow as tf
+            tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+            tensorflow_available = True
+        except ImportError:
+            st.error("TensorFlow is required but not installed. Please ensure TensorFlow CPU is available.")
+            st.stop()
+    return tf
 
 # -----------------------------
 # Configuration / constants
@@ -173,12 +175,8 @@ except ImportError:
 @st.cache_resource
 def load_model():
     """Load the detection model from SavedModel format (cached)."""
-    # Import TensorFlow here (lazy import)
-    try:
-        import tensorflow as tf
-    except ImportError:
-        st.error("TensorFlow is not installed. Please wait for dependencies to install or refresh the page.")
-        st.stop()
+    # Ensure TensorFlow is available
+    tf = ensure_tensorflow()
     
     savedmodel_dir = os.path.join(paths['CHECKPOINT_PATH'], 'export', 'saved_model')
     

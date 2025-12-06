@@ -58,14 +58,10 @@ PROFILE_LINKEDIN = 'https://www.linkedin.com/in/mubarak-kwanda/'
 PROFILE_TWITTER = 'https://twitter.com/mbrkkwanda'
 # Default model URL (Google Drive share link provided by user)
 DEFAULT_MODEL_URL = 'https://drive.google.com/file/d/1Biw-K0DlbOAxGVEm4wy2LLGdDSuZl1Wg/view?usp=sharing'
-# Ensure workspace folders exist (this block can be skipped if folders already present)
+# Ensure workspace folders exist
 for path in paths.values():
     if not os.path.exists(path):
-        # These lines were originally written for notebook environments; keep as-is
-        if os.name == 'posix':
-            get_ipython().system('mkdir -p {path}')
-        if os.name == 'nt':
-            get_python_inc().system('mkdir {path}')
+        os.makedirs(path, exist_ok=True)
 
 
 # Optional setup steps commented out (git clone of TF models, protobuf install, etc.)

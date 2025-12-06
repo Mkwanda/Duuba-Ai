@@ -10,8 +10,17 @@ from pathlib import Path
 
 # Ensure we run the app from the workspace root (this file's directory)
 HERE = Path(__file__).parent.resolve()
+# Determine repository root robustly: prefer grandparent, fall back to parent or cwd
+file_path = Path(__file__).resolve()
+if len(file_path.parents) >= 2:
+    REPO_ROOT = file_path.parents[1]
+elif len(file_path.parents) == 1:
+    REPO_ROOT = file_path.parents[0]
+else:
+    REPO_ROOT = Path.cwd()
+
 # If the full app exists in repository root, copy it here for convenience
-ROOT_APP = Path(__file__).parents[1] / 'Duuba-AI.py'
+ROOT_APP = REPO_ROOT / 'Duuba-AI.py'
 TARGET_APP = HERE / 'Duuba-AI.py'
 if ROOT_APP.exists() and not TARGET_APP.exists():
     shutil.copy2(ROOT_APP, TARGET_APP)
@@ -19,13 +28,13 @@ if ROOT_APP.exists() and not TARGET_APP.exists():
 # Copy small supporting files if present at repo root
 supporting = ['requirements-deploy.txt', 'Procfile', 'Dockerfile', 'DEPLOY.md']
 for fname in supporting:
-    src = Path(__file__).parents[1] / fname
+    src = REPO_ROOT / fname
     dst = HERE / fname
     if src.exists() and not dst.exists():
         shutil.copy2(src, dst)
 
 # Copy label map if available
-src_label = Path(__file__).parents[1] / 'annotations' / 'label_map.pbtxt'
+src_label = REPO_ROOT / 'annotations' / 'label_map.pbtxt'
 if src_label.exists():
     dst_label_dir = HERE / 'annotations'
     dst_label_dir.mkdir(exist_ok=True)

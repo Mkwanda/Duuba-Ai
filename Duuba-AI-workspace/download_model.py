@@ -7,9 +7,17 @@ Downloader copied into the workspace. This is identical to the root-level
 from pathlib import Path
 import shutil
 
+# Determine repository root robustly
+file_path = Path(__file__).resolve()
+if len(file_path.parents) >= 2:
+    REPO_ROOT = file_path.parents[1]
+elif len(file_path.parents) == 1:
+    REPO_ROOT = file_path.parents[0]
+else:
+    REPO_ROOT = Path.cwd()
+
 # Copy the root downloader into this workspace file at runtime if needed
-ROOT = Path(__file__).parents[1]
-src = ROOT / 'download_model.py'
+src = REPO_ROOT / 'download_model.py'
 if src.exists():
     shutil.copy2(src, Path(__file__))
 else:

@@ -1,0 +1,4 @@
+# System packages for Streamlit Cloud
+# These help speed up TensorFlow installation
+libopenblas-dev
+liblapack-dev

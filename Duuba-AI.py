@@ -16,13 +16,18 @@ from pathlib import Path
 
 # Third-party imports
 import streamlit as st
-import tensorflow as tf
 import numpy as np
 import cv2
 from PIL import Image
 
-# Configure TensorFlow for inference
-tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+# TensorFlow will be imported lazily when needed
+tensorflow_available = False
+try:
+    import tensorflow as tf
+    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
+    tensorflow_available = True
+except ImportError:
+    st.warning("⚠️ TensorFlow not yet installed. It may take a few minutes on first load...")
 
 # -----------------------------
 # Configuration / constants
@@ -113,6 +118,13 @@ except ImportError:
 @st.cache_resource
 def load_model():
     """Load the detection model from SavedModel format (cached)."""
+    # Import TensorFlow here (lazy import)
+    try:
+        import tensorflow as tf
+    except ImportError:
+        st.error("TensorFlow is not installed. Please wait for dependencies to install or refresh the page.")
+        st.stop()
+    
     savedmodel_dir = os.path.join(paths['CHECKPOINT_PATH'], 'export', 'saved_model')
     
     # Fallback: if export doesn't exist, try direct checkpoint load
@@ -169,18 +181,6 @@ except Exception as e:
     st.error(f"❌ Failed to load model: {str(e)}")
     st.info("Please ensure your model has been exported to SavedModel format.")
     st.stop()
-
-    # Run the downloader; it will download/extract into the expected folder
-    try:
-        subprocess.check_call(["python", str(downloader), "--url", model_url])
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError(f'Downloader failed: {e}')
-
-    if not model_exists():
-        raise RuntimeError('Model still not found after downloader ran.')
-
-
-# Ensure model is available before attempting to load it
 try:
     ensure_model_available()
 except Exception as e:

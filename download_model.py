@@ -18,14 +18,50 @@ import tarfile
 import zipfile
 import urllib.request
 from pathlib import Path
+import re
+
+try:
+    import requests
+except Exception:
+    requests = None
 
 
 def download_and_extract(url: str, dest: Path):
     dest.mkdir(parents=True, exist_ok=True)
     archive_path = dest / 'model_archive.tmp'
     print(f'Downloading model from {url} to {archive_path}...')
-    urllib.request.urlretrieve(url, archive_path)
-    print('Download finished.')
+
+    # Handle Google Drive shared file links specially to get a direct download
+    drive_match = re.search(r'd/([a-zA-Z0-9_-]+)', url)
+    if drive_match:
+        file_id = drive_match.group(1)
+        direct_url = f'https://drive.google.com/uc?export=download&id={file_id}'
+        # Prefer requests for handling large-file confirm tokens
+        if requests:
+            session = requests.Session()
+            response = session.get(direct_url, stream=True)
+            token = None
+            for k, v in response.cookies.items():
+                if k.startswith('download_warning'):
+                    token = v
+                    break
+            if token:
+                params = {'id': file_id, 'export': 'download', 'confirm': token}
+                response = session.get('https://drive.google.com/uc', params=params, stream=True)
+
+            with open(archive_path, 'wb') as f:
+                for chunk in response.iter_content(chunk_size=32768):
+                    if chunk:
+                        f.write(chunk)
+            print('Download finished.')
+        else:
+            # Fallback to direct uc link via urllib (may fail on large files requiring confirmation)
+            urllib.request.urlretrieve(direct_url, archive_path)
+            print('Download finished (urllib fallback).')
+        # proceed to extraction below
+    else:
+        urllib.request.urlretrieve(url, archive_path)
+        print('Download finished.')
 
     try:
         if tarfile.is_tarfile(archive_path):

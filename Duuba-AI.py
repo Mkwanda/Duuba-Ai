@@ -56,6 +56,8 @@ files = {
 #          PROFILE_TWITTER = 'https://twitter.com/your-handle'
 PROFILE_LINKEDIN = 'https://www.linkedin.com/in/mubarak-kwanda/'
 PROFILE_TWITTER = 'https://twitter.com/mbrkkwanda'
+# Default model URL (Google Drive share link provided by user)
+DEFAULT_MODEL_URL = 'https://drive.google.com/file/d/1Biw-K0DlbOAxGVEm4wy2LLGdDSuZl1Wg/view?usp=sharing'
 # Ensure workspace folders exist (this block can be skipped if folders already present)
 for path in paths.values():
     if not os.path.exists(path):
@@ -174,7 +176,7 @@ def ensure_model_available():
     if model_exists():
         return
 
-    model_url = os.environ.get('MODEL_URL')
+    model_url = os.environ.get('MODEL_URL') or globals().get('DEFAULT_MODEL_URL')
     if not model_url:
         # give a clear error to the user (Streamlit will show this when run)
         raise RuntimeError('Model not found at "{}" and MODEL_URL not provided.'.format(paths['CHECKPOINT_PATH']))

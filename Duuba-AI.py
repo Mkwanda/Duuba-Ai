@@ -428,16 +428,16 @@ image_np_with_detections = draw_boxes_on_image(
     category_index,
     min_score_thresh=0.5)
 
-    # Enhance visualization: draw thicker boxes and label backgrounds for better visibility
-    min_score = 0.5
-    h, w, _ = image_np_with_detections.shape
-    for i in range(min(5, int(detections.get('num_detections', 0)))):
-        score = float(detections['detection_scores'][i])
-        if score < min_score:
-            continue
-        box = detections['detection_boxes'][i]
-        ymin, xmin, ymax, xmax = box
-        left, right, top, bottom = int(xmin * w), int(xmax * w), int(ymin * h), int(ymax * h)
+# Enhance visualization: draw thicker boxes and label backgrounds for better visibility
+min_score = 0.5
+h, w, _ = image_np_with_detections.shape
+for i in range(min(5, int(detections.get('num_detections', 0)))):
+    score = float(detections['detection_scores'][i])
+    if score < min_score:
+        continue
+    box = detections['detection_boxes'][i]
+    ymin, xmin, ymax, xmax = box
+    left, right, top, bottom = int(xmin * w), int(xmax * w), int(ymin * h), int(ymax * h)
         cls = int(detections['detection_classes'][i]) + label_id_offset
         class_name = category_index.get(cls, {'name': 'N/A'})['name']
         label = f"{class_name}: {int(score * 100)}%"

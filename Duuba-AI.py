@@ -12,9 +12,17 @@
 # Standard library imports
 from distutils.sysconfig import get_python_inc
 import os
+from pathlib import Path
 
 # Third-party imports
 import streamlit as st
+import tensorflow as tf
+import numpy as np
+import cv2
+from PIL import Image
+
+# Configure TensorFlow for inference
+tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
 
 # -----------------------------
 # Configuration / constants
@@ -101,34 +109,30 @@ except ImportError:
     TFOD_AVAILABLE = False
     st.stop()
 
-# Build the model and restore weights from checkpoint (cached for fast reruns)
+# Build the model and restore weights from SavedModel (cached for fast reruns)
 @st.cache_resource
 def load_model():
-    """Load and restore the detection model from checkpoint (cached)."""
-    configs = od_config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
-    detection_model = model_builder.build(model_config=configs['model'], is_training=False)
-    ckpt = tf.compat.v2.train.Checkpoint(model=detection_model)
-    ckpt.restore(os.path.join(paths['CHECKPOINT_PATH'], 'ckpt-3')).expect_partial()
+    """Load the detection model from SavedModel format (cached)."""
+    savedmodel_dir = os.path.join(paths['CHECKPOINT_PATH'], 'export', 'saved_model')
+    
+    # Fallback: if export doesn't exist, try direct checkpoint load
+    if not os.path.exists(savedmodel_dir):
+        st.warning(f"SavedModel not found at {savedmodel_dir}. Attempting legacy checkpoint load...")
+        # For legacy checkpoints, we'd need object_detection API which is too heavy
+        # Instead, raise a helpful error
+        raise RuntimeError(
+            f"SavedModel not found. Please ensure the model has been exported.\n"
+            f"Expected location: {savedmodel_dir}"
+        )
+    
+    # Load the SavedModel
+    detection_model = tf.saved_model.load(savedmodel_dir)
     return detection_model
 
-detection_model = load_model()
-
-
 def model_exists():
-    """Return True if the checkpoint or exported SavedModel exists locally."""
-    ckpt_dir = Path(paths['CHECKPOINT_PATH'])
-    # Check for specific checkpoint files or an exported saved_model
-    if ckpt_dir.exists():
-        # checkpoint files (ckpt-*.index) or saved_model
-        patterns = ['ckpt-3.index', 'saved_model.pb', 'pipeline.config']
-        for p in patterns:
-            if (ckpt_dir / p).exists():
-                return True
-        # also check inside export/saved_model
-        if (ckpt_dir / 'export' / 'saved_model' / 'saved_model.pb').exists():
-            return True
-    return False
-
+    """Return True if the exported SavedModel exists locally."""
+    savedmodel_dir = os.path.join(paths['CHECKPOINT_PATH'], 'export', 'saved_model')
+    return os.path.exists(os.path.join(savedmodel_dir, 'saved_model.pb'))
 
 def ensure_model_available():
     """Ensure model files are present; if not, attempt to download using MODEL_URL env var.
@@ -140,13 +144,31 @@ def ensure_model_available():
 
     model_url = os.environ.get('MODEL_URL') or globals().get('DEFAULT_MODEL_URL')
     if not model_url:
-        # give a clear error to the user (Streamlit will show this when run)
-        raise RuntimeError('Model not found at "{}" and MODEL_URL not provided.'.format(paths['CHECKPOINT_PATH']))
+        raise RuntimeError('Model not found and MODEL_URL not provided.')
 
     # Call the downloader script in the repo root
     downloader = Path(__file__).parent / 'download_model.py'
     if not downloader.exists():
-        raise RuntimeError('Model missing and downloader not found at {}'.format(downloader))
+        raise RuntimeError('Model missing and downloader not found.')
+    
+    # Import downloader and run
+    import subprocess
+    result = subprocess.run(
+        ['python', str(downloader), '--url', model_url],
+        capture_output=True,
+        text=True
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f'Model download failed: {result.stderr}')
+
+# Try to load the model
+try:
+    ensure_model_available()
+    detection_model = load_model()
+except Exception as e:
+    st.error(f"❌ Failed to load model: {str(e)}")
+    st.info("Please ensure your model has been exported to SavedModel format.")
+    st.stop()
 
     # Run the downloader; it will download/extract into the expected folder
     try:
@@ -197,7 +219,15 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Create a mapping from label ids to display names for visualization
-category_index = label_map_util.create_category_index_from_labelmap(files['LABELMAP'])
+# (replaces label_map_util which requires object_detection API)
+def create_category_index():
+    """Create category index from labels."""
+    category_index = {}
+    for label in labels:
+        category_index[label['id']] = {'id': label['id'], 'name': label['name']}
+    return category_index
+
+category_index = create_category_index()
 
 
 def format_score(score, digits=2):
@@ -349,20 +379,57 @@ if IMAGE_PATH is not None:
         else:
             st.write('No detection seen Please upload new image')
 
-    # Visualize bounding boxes and labels on the image
-    viz_utils.visualize_boxes_and_labels_on_image_array(
-        image_np_with_detections,
-        detections['detection_boxes'],
-        detections['detection_classes'] + label_id_offset,
-        detections['detection_scores'],
-        category_index,
-        use_normalized_coordinates=True,
-        max_boxes_to_draw=5,
-        min_score_thresh=.8,
-        agnostic_mode=False)
+def draw_boxes_on_image(image_np, boxes, classes, scores, category_index, min_score_thresh=0.5):
+    """Draw bounding boxes and labels on image (replaces viz_utils.visualize_boxes_and_labels_on_image_array)."""
+    im_height, im_width = image_np.shape[:2]
+    
+    for i in range(len(scores)):
+        if scores[i] < min_score_thresh:
+            continue
+        
+        # Convert normalized coordinates to pixel coordinates
+        ymin, xmin, ymax, xmax = boxes[i]
+        left, right = int(xmin * im_width), int(xmax * im_width)
+        top, bottom = int(ymin * im_height), int(ymax * im_height)
+        
+        class_id = int(classes[i]) + 1  # label_id_offset
+        score = scores[i]
+        
+        # Get class name
+        class_name = category_index.get(class_id, {}).get('name', f'Class {class_id}')
+        
+        # Draw bounding box
+        color = (0, 255, 0) if class_id == 1 else (0, 0, 255)  # Green for healthy, red for infected
+        cv2.rectangle(image_np, (left, top), (right, bottom), color, 3)
+        
+        # Draw label
+        label = f'{class_name}: {score:.2%}'
+        font_scale = 0.7
+        thickness = 2
+        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
+        
+        # Background for text
+        text_x, text_y = left, max(top - 10, 0)
+        cv2.rectangle(image_np, (text_x, text_y - text_size[1] - 5),
+                     (text_x + text_size[0] + 5, text_y + 5), color, -1)
+        
+        # Draw text
+        cv2.putText(image_np, label, (text_x + 2, text_y - 3),
+                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
+    
+    return image_np
+
+# Visualize bounding boxes and labels on the image
+image_np_with_detections = draw_boxes_on_image(
+    image_np_with_detections,
+    detections['detection_boxes'],
+    detections['detection_classes'],
+    detections['detection_scores'],
+    category_index,
+    min_score_thresh=0.5)
 
     # Enhance visualization: draw thicker boxes and label backgrounds for better visibility
-    min_score = 0.8  # same threshold used in viz_utils call above
+    min_score = 0.5
     h, w, _ = image_np_with_detections.shape
     for i in range(min(5, int(detections.get('num_detections', 0)))):
         score = float(detections['detection_scores'][i])

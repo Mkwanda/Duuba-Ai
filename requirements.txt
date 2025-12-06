@@ -4,9 +4,6 @@ opencv-python-headless
 Pillow
 tensorflow==2.13.0
 protobuf==3.20.3
-# TensorFlow Object Detection API
-tf-models-official
 # For robust Google Drive downloads
 gdown
 requests
-# Add any additional packages required by your model (tf-addons, etc.)

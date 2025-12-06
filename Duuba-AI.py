@@ -101,6 +101,8 @@ import tensorflow as tf
 from object_detection.utils import config_util
 from object_detection.protos import pipeline_pb2
 from google.protobuf import text_format
+import subprocess
+from pathlib import Path
 
 # Read the pipeline config and merge into protobuf object
 config = config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
@@ -146,6 +148,62 @@ def load_model():
     return detection_model
 
 detection_model = load_model()
+
+
+def model_exists():
+    """Return True if the checkpoint or exported SavedModel exists locally."""
+    ckpt_dir = Path(paths['CHECKPOINT_PATH'])
+    # Check for specific checkpoint files or an exported saved_model
+    if ckpt_dir.exists():
+        # checkpoint files (ckpt-*.index) or saved_model
+        patterns = ['ckpt-3.index', 'saved_model.pb', 'pipeline.config']
+        for p in patterns:
+            if (ckpt_dir / p).exists():
+                return True
+        # also check inside export/saved_model
+        if (ckpt_dir / 'export' / 'saved_model' / 'saved_model.pb').exists():
+            return True
+    return False
+
+
+def ensure_model_available():
+    """Ensure model files are present; if not, attempt to download using MODEL_URL env var.
+
+    Raises RuntimeError if model is still missing after attempted download.
+    """
+    if model_exists():
+        return
+
+    model_url = os.environ.get('MODEL_URL')
+    if not model_url:
+        # give a clear error to the user (Streamlit will show this when run)
+        raise RuntimeError('Model not found at "{}" and MODEL_URL not provided.'.format(paths['CHECKPOINT_PATH']))
+
+    # Call the downloader script in the repo root
+    downloader = Path(__file__).parent / 'download_model.py'
+    if not downloader.exists():
+        raise RuntimeError('Model missing and downloader not found at {}'.format(downloader))
+
+    # Run the downloader; it will download/extract into the expected folder
+    try:
+        subprocess.check_call(["python", str(downloader), "--url", model_url])
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f'Downloader failed: {e}')
+
+    if not model_exists():
+        raise RuntimeError('Model still not found after downloader ran.')
+
+
+# Ensure model is available before attempting to load it
+try:
+    ensure_model_available()
+except Exception as e:
+    # When running as a module this will propagate; for Streamlit show a user-friendly message
+    try:
+        st.error(f'Model unavailable: {e}')
+    except Exception:
+        pass
+    raise
 
 
 @st.cache_resource
@@ -274,7 +332,7 @@ if IMAGE_PATH is not None:
         # keep status for a short while then clear (non-blocking)
         pass 
 
-    # Post-process detection outputs
+    # Post-process detection  utputs
     num_detections = int(detections.pop('num_detections'))
     detections = {key: value[0, :num_detections].numpy()
                   for key, value in detections.items()}

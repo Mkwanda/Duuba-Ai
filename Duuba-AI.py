@@ -438,79 +438,79 @@ for i in range(min(5, int(detections.get('num_detections', 0)))):
     box = detections['detection_boxes'][i]
     ymin, xmin, ymax, xmax = box
     left, right, top, bottom = int(xmin * w), int(xmax * w), int(ymin * h), int(ymax * h)
-        cls = int(detections['detection_classes'][i]) + label_id_offset
-        class_name = category_index.get(cls, {'name': 'N/A'})['name']
-        label = f"{class_name}: {int(score * 100)}%"
-        # Pick color based on class (green for healthy, red for infected)
-        color = (0, 200, 0) if class_name.lower().startswith('healthy') or cls == 1 else (0, 0, 200)
-        # Draw thick rectangle
-        cv2.rectangle(image_np_with_detections, (left, top), (right, bottom), color, thickness=4)
-        # Draw filled rectangle for label background
-        (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-        cv2.rectangle(image_np_with_detections, (left, max(0, top - text_h - 10)), (left + text_w, top), color, -1)
-        cv2.putText(image_np_with_detections, label, (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
+    cls = int(detections['detection_classes'][i]) + label_id_offset
+    class_name = category_index.get(cls, {'name': 'N/A'})['name']
+    label = f"{class_name}: {int(score * 100)}%"
+    # Pick color based on class (green for healthy, red for infected)
+    color = (0, 200, 0) if class_name.lower().startswith('healthy') or cls == 1 else (0, 0, 200)
+    # Draw thick rectangle
+    cv2.rectangle(image_np_with_detections, (left, top), (right, bottom), color, thickness=4)
+    # Draw filled rectangle for label background
+    (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+    cv2.rectangle(image_np_with_detections, (left, max(0, top - text_h - 10)), (left + text_w, top), color, -1)
+    cv2.putText(image_np_with_detections, label, (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
-    # Convert to RGB for Streamlit
-    annotated_rgb = cv2.cvtColor(image_np_with_detections, cv2.COLOR_BGR2RGB)
+# Convert to RGB for Streamlit
+annotated_rgb = cv2.cvtColor(image_np_with_detections, cv2.COLOR_BGR2RGB)
 
-    # Prepare a presentable 800x800 final image using PIL
+# Prepare a presentable 800x800 final image using PIL
+try:
+    pil_img = Image.fromarray(annotated_rgb)
+
+    # Resize while preserving aspect ratio to fit within 800x800
+    target_size = (800, 800)
+    pil_copy = pil_img.copy()
+    pil_copy.thumbnail(target_size, Image.LANCZOS)
+
+    # Create white background and paste centered
+    final_img = Image.new('RGB', target_size, (255, 255, 255))
+    paste_x = (target_size[0] - pil_copy.width) // 2
+    paste_y = (target_size[1] - pil_copy.height) // 2
+    final_img.paste(pil_copy, (paste_x, paste_y))
+
+    # Draw a small legend and title on the final image
+    draw = ImageDraw.Draw(final_img)
     try:
-        pil_img = Image.fromarray(annotated_rgb)
+        font = ImageFont.truetype('arial.ttf', 18)
+        font_small = ImageFont.truetype('arial.ttf', 14)
+    except Exception:
+        font = ImageFont.load_default()
+        font_small = ImageFont.load_default()
 
-        # Resize while preserving aspect ratio to fit within 800x800
-        target_size = (800, 800)
-        pil_copy = pil_img.copy()
-        pil_copy.thumbnail(target_size, Image.LANCZOS)
+    # Title
+    title = 'Detections'
+    tw, th = draw.textsize(title, font=font)
+    draw.text(((target_size[0] - tw) / 2, 8), title, fill=(0, 0, 0), font=font)
 
-        # Create white background and paste centered
-        final_img = Image.new('RGB', target_size, (255, 255, 255))
-        paste_x = (target_size[0] - pil_copy.width) // 2
-        paste_y = (target_size[1] - pil_copy.height) // 2
-        final_img.paste(pil_copy, (paste_x, paste_y))
+    # Legend (top-left corner)
+    legend_x = 12
+    legend_y = 40
+    legend_gap = 6
+    legend_items = [(1, 'Healthy Pod', (0, 200, 0)), (2, 'Infected Pod', (200, 0, 0))]
+    box_size = 16
+    for idx, name, color in legend_items:
+        draw.rectangle([legend_x, legend_y, legend_x + box_size, legend_y + box_size], fill=color)
+        draw.text((legend_x + box_size + 6, legend_y - 2), name, fill=(0, 0, 0), font=font_small)
+        legend_y += box_size + legend_gap
 
-        # Draw a small legend and title on the final image
-        draw = ImageDraw.Draw(final_img)
-        try:
-            font = ImageFont.truetype('arial.ttf', 18)
-            font_small = ImageFont.truetype('arial.ttf', 14)
-        except Exception:
-            font = ImageFont.load_default()
-            font_small = ImageFont.load_default()
+    # Convert final image to bytes for Streamlit display and download
+    buf = io.BytesIO()
+    final_img.save(buf, format='PNG')
+    buf.seek(0)
+    img_bytes = buf.getvalue()
 
-        # Title
-        title = 'Detections'
-        tw, th = draw.textsize(title, font=font)
-        draw.text(((target_size[0] - tw) / 2, 8), title, fill=(0, 0, 0), font=font)
+    # Show the 800x800 presentable image
+    st.image(final_img, caption='Annotated (800x800)', use_column_width=False, width=800)
 
-        # Legend (top-left corner)
-        legend_x = 12
-        legend_y = 40
-        legend_gap = 6
-        legend_items = [(1, 'Healthy Pod', (0, 200, 0)), (2, 'Infected Pod', (200, 0, 0))]
-        box_size = 16
-        for idx, name, color in legend_items:
-            draw.rectangle([legend_x, legend_y, legend_x + box_size, legend_y + box_size], fill=color)
-            draw.text((legend_x + box_size + 6, legend_y - 2), name, fill=(0, 0, 0), font=font_small)
-            legend_y += box_size + legend_gap
+    # Provide downloads: full-size PNG and open in new tab link
+    st.download_button('Download annotated (800x800)', data=img_bytes, file_name='annotated_800.png', mime='image/png')
+    data_url = "data:image/png;base64," + __import__('base64').b64encode(img_bytes).decode('utf-8')
+    st.markdown(f"[Open annotated image in new tab]({data_url})", unsafe_allow_html=True)
 
-        # Convert final image to bytes for Streamlit display and download
-        buf = io.BytesIO()
-        final_img.save(buf, format='PNG')
-        buf.seek(0)
-        img_bytes = buf.getvalue()
-
-        # Show the 800x800 presentable image
-        st.image(final_img, caption='Annotated (800x800)', use_column_width=False, width=800)
-
-        # Provide downloads: full-size PNG and open in new tab link
-        st.download_button('Download annotated (800x800)', data=img_bytes, file_name='annotated_800.png', mime='image/png')
-        data_url = "data:image/png;base64," + __import__('base64').b64encode(img_bytes).decode('utf-8')
-        st.markdown(f"[Open annotated image in new tab]({data_url})", unsafe_allow_html=True)
-
-    except Exception as e:
-        # Fallback to original display if anything goes wrong
-        st.image(annotated_rgb, caption='Detections', use_column_width=True)
-        st.write('Could not create 800x800 presentable image:', e)
+except Exception as e:
+    # Fallback to original display if anything goes wrong
+    st.image(annotated_rgb, caption='Detections', use_column_width=True)
+    st.write('Could not create 800x800 presentable image:', e)
 
 # -----------------------------
 # Footer: show profile links if configured

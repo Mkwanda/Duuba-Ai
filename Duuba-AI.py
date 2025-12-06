@@ -64,76 +64,42 @@ for path in paths.values():
         os.makedirs(path, exist_ok=True)
 
 
-# Optional setup steps commented out (git clone of TF models, protobuf install, etc.)
-# They are useful when preparing a new environment from scratch.
-# if not os.path.exists(os.path.join(paths['APIMODEL_PATH'], 'research', 'object_detection')):
-#     get_ipython().system("git clone https://github.com/tensorflow/models {paths['APIMODEL_PATH']}")
-# get_ipython().system('pip install protobuf==3.19.6')
-
-
-# -----------------------------
-# Object detection imports and label map creation
-# -----------------------------
-import object_detection
-
-# Labels used by this model; update if label ids or names change.
+# Labels used by this model
 labels = [{'name':'Healthy Pod', 'id':1}, {'name':'Infected Pod', 'id':2}]
 
-# Write the label map file used by the TF OD API
-with open(files['LABELMAP'], 'w') as f:
-    for label in labels:
-        f.write('item { \n')
-        f.write('\tname:\'{}\'\n'.format(label['name']))
-        f.write('\tid:{}\n'.format(label['id']))
-        f.write('}\n')
-
-# TFRecord generation steps are left commented (this project includes training utilities)
-# if not os.path.exists(files['TF_RECORD_SCRIPT']):
-#     get_ipython().system("git clone https://github.com/nicknochnack/GenerateTFRecord {paths['SCRIPTS_PATH']}")
-
-
-# -----------------------------
-# Update pipeline config for transfer learning
-# -----------------------------
-import tensorflow as tf
-from object_detection.utils import config_util
-from object_detection.protos import pipeline_pb2
-from google.protobuf import text_format
-import subprocess
-from pathlib import Path
-
-# Read the pipeline config and merge into protobuf object
-config = config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
-
-pipeline_config = pipeline_pb2.TrainEvalPipelineConfig()
-with tf.io.gfile.GFile(files['PIPELINE_CONFIG'], "r") as f:
-    proto_str = f.read()
-    text_format.Merge(proto_str, pipeline_config)
-
-# Update a few fields for this fine-tuning setup (num classes, checkpoint, input paths)
-pipeline_config.model.ssd.num_classes = len(labels)
-pipeline_config.train_config.batch_size = 4
-pipeline_config.train_config.fine_tune_checkpoint = os.path.join(paths['PRETRAINED_MODEL_PATH'], PRETRAINED_MODEL_NAME, 'checkpoint', 'ckpt-3')
-pipeline_config.train_config.fine_tune_checkpoint_type = "detection"
-pipeline_config.train_input_reader.label_map_path = files['LABELMAP']
-pipeline_config.train_input_reader.tf_record_input_reader.input_path[:] = [os.path.join(paths['ANNOTATION_PATH'], 'train.record')]
-pipeline_config.eval_input_reader[0].label_map_path = files['LABELMAP']
-pipeline_config.eval_input_reader[0].tf_record_input_reader.input_path[:] = [os.path.join(paths['ANNOTATION_PATH'], 'test.record')]
-
-# Persist the edited pipeline config back to disk
-config_text = text_format.MessageToString(pipeline_config)
-with tf.io.gfile.GFile(files['PIPELINE_CONFIG'], "wb") as f:
-    f.write(config_text)
+# Ensure label map file exists
+if not os.path.exists(files['LABELMAP']):
+    with open(files['LABELMAP'], 'w') as f:
+        for label in labels:
+            f.write('item { \n')
+            f.write('\tname:\'{}\'\n'.format(label['name']))
+            f.write('\tid:{}\n'.format(label['id']))
+            f.write('}\n')
 
 
 # -----------------------------
 # Load trained detection model from checkpoint
 # -----------------------------
-import os
-from object_detection.utils import label_map_util
-from object_detection.utils import visualization_utils as viz_utils
-from object_detection.builders import model_builder
-from object_detection.utils import config_util as od_config_util
+import tensorflow as tf
+
+# Try importing TF Object Detection API
+try:
+    from object_detection.utils import label_map_util
+    from object_detection.utils import visualization_utils as viz_utils
+    from object_detection.builders import model_builder
+    from object_detection.utils import config_util as od_config_util
+    TFOD_AVAILABLE = True
+except ImportError:
+    st.error("""
+    ⚠️ TensorFlow Object Detection API not installed.
+    
+    For local development, install with:
+    ```bash
+    pip install tf-models-official
+    ```
+    """)
+    TFOD_AVAILABLE = False
+    st.stop()
 
 # Build the model and restore weights from checkpoint (cached for fast reruns)
 @st.cache_resource

@@ -12,79 +12,9 @@
 # Standard library imports
 from distutils.sysconfig import get_python_inc
 import os
-from pathlib import Path
 
 # Third-party imports
 import streamlit as st
-
-# Lazy imports for heavy packages
-try:
-    import numpy as np
-except ImportError:
-    np = None
-
-try:
-    import cv2
-except ImportError:
-    cv2 = None
-
-try:
-    from PIL import Image
-except ImportError:
-    Image = None
-
-# TensorFlow will be imported lazily when needed
-tensorflow_available = False
-try:
-    import tensorflow as tf
-    tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-    tensorflow_available = True
-except ImportError:
-    pass
-
-# Check all dependencies are available
-def check_dependencies():
-    """Verify all required packages are installed."""
-    missing = []
-    if np is None:
-        missing.append("numpy")
-    if cv2 is None:
-        missing.append("opencv-python-headless")
-    if Image is None:
-        missing.append("Pillow")
-    
-    if missing:
-        st.error(f"""
-        ❌ Missing dependencies: {', '.join(missing)}
-        
-        These packages are being installed. Please refresh this page in a moment.
-        If the error persists after 5 minutes, the build environment may have timed out.
-        """)
-        return False
-    return True
-
-# Check dependencies on app startup
-if not check_dependencies():
-    st.stop()
-
-# Now it's safe to use these imports
-import numpy as np
-import cv2
-from PIL import Image
-
-# TensorFlow will be imported when model is loaded (lazy import)
-def ensure_tensorflow():
-    """Ensure TensorFlow is available, install if needed."""
-    global tensorflow_available, tf
-    if not tensorflow_available:
-        try:
-            import tensorflow as tf
-            tf.compat.v1.logging.set_verbosity(tf.compat.v1.logging.ERROR)
-            tensorflow_available = True
-        except ImportError:
-            st.error("TensorFlow is required but not installed. Please ensure TensorFlow CPU is available.")
-            st.stop()
-    return tf
 
 # -----------------------------
 # Configuration / constants
@@ -128,89 +58,115 @@ PROFILE_LINKEDIN = 'https://www.linkedin.com/in/mubarak-kwanda/'
 PROFILE_TWITTER = 'https://twitter.com/mbrkkwanda'
 # Default model URL (Google Drive share link provided by user)
 DEFAULT_MODEL_URL = 'https://drive.google.com/file/d/1Biw-K0DlbOAxGVEm4wy2LLGdDSuZl1Wg/view?usp=sharing'
-# Ensure workspace folders exist
+# Ensure workspace folders exist (this block can be skipped if folders already present)
 for path in paths.values():
     if not os.path.exists(path):
-        os.makedirs(path, exist_ok=True)
+        # These lines were originally written for notebook environments; keep as-is
+        if os.name == 'posix':
+            get_ipython().system('mkdir -p {path}')
+        if os.name == 'nt':
+            get_python_inc().system('mkdir {path}')
 
 
-# Labels used by this model
+# Optional setup steps commented out (git clone of TF models, protobuf install, etc.)
+# They are useful when preparing a new environment from scratch.
+# if not os.path.exists(os.path.join(paths['APIMODEL_PATH'], 'research', 'object_detection')):
+#     get_ipython().system("git clone https://github.com/tensorflow/models {paths['APIMODEL_PATH']}")
+# get_ipython().system('pip install protobuf==3.19.6')
+
+
+# -----------------------------
+# Object detection imports and label map creation
+# -----------------------------
+import object_detection
+
+# Labels used by this model; update if label ids or names change.
 labels = [{'name':'Healthy Pod', 'id':1}, {'name':'Infected Pod', 'id':2}]
 
-# Ensure label map file exists
-if not os.path.exists(files['LABELMAP']):
-    with open(files['LABELMAP'], 'w') as f:
-        for label in labels:
-            f.write('item { \n')
-            f.write('\tname:\'{}\'\n'.format(label['name']))
-            f.write('\tid:{}\n'.format(label['id']))
-            f.write('}\n')
+# Write the label map file used by the TF OD API
+with open(files['LABELMAP'], 'w') as f:
+    for label in labels:
+        f.write('item { \n')
+        f.write('\tname:\'{}\'\n'.format(label['name']))
+        f.write('\tid:{}\n'.format(label['id']))
+        f.write('}\n')
+
+# TFRecord generation steps are left commented (this project includes training utilities)
+# if not os.path.exists(files['TF_RECORD_SCRIPT']):
+#     get_ipython().system("git clone https://github.com/nicknochnack/GenerateTFRecord {paths['SCRIPTS_PATH']}")
+
+
+# -----------------------------
+# Update pipeline config for transfer learning
+# -----------------------------
+import tensorflow as tf
+from object_detection.utils import config_util
+from object_detection.protos import pipeline_pb2
+from google.protobuf import text_format
+import subprocess
+from pathlib import Path
+
+# Read the pipeline config and merge into protobuf object
+config = config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
+
+pipeline_config = pipeline_pb2.TrainEvalPipelineConfig()
+with tf.io.gfile.GFile(files['PIPELINE_CONFIG'], "r") as f:
+    proto_str = f.read()
+    text_format.Merge(proto_str, pipeline_config)
+
+# Update a few fields for this fine-tuning setup (num classes, checkpoint, input paths)
+pipeline_config.model.ssd.num_classes = len(labels)
+pipeline_config.train_config.batch_size = 4
+pipeline_config.train_config.fine_tune_checkpoint = os.path.join(paths['PRETRAINED_MODEL_PATH'], PRETRAINED_MODEL_NAME, 'checkpoint', 'ckpt-3')
+pipeline_config.train_config.fine_tune_checkpoint_type = "detection"
+pipeline_config.train_input_reader.label_map_path = files['LABELMAP']
+pipeline_config.train_input_reader.tf_record_input_reader.input_path[:] = [os.path.join(paths['ANNOTATION_PATH'], 'train.record')]
+pipeline_config.eval_input_reader[0].label_map_path = files['LABELMAP']
+pipeline_config.eval_input_reader[0].tf_record_input_reader.input_path[:] = [os.path.join(paths['ANNOTATION_PATH'], 'test.record')]
+
+# Persist the edited pipeline config back to disk
+config_text = text_format.MessageToString(pipeline_config)
+with tf.io.gfile.GFile(files['PIPELINE_CONFIG'], "wb") as f:
+    f.write(config_text)
 
 
 # -----------------------------
 # Load trained detection model from checkpoint
-# ----------------------------- 
-# These imports will be deferred until model loading is actually needed
-TFOD_AVAILABLE = False
+# -----------------------------
+import os
+from object_detection.utils import label_map_util
+from object_detection.utils import visualization_utils as viz_utils
+from object_detection.builders import model_builder
+from object_detection.utils import config_util as od_config_util
 
-def ensure_tfod_available():
-    """Ensure TensorFlow Object Detection API is available."""
-    global TFOD_AVAILABLE
-    if not TFOD_AVAILABLE:
-        try:
-            import tensorflow as tf
-            from object_detection.utils import label_map_util
-            from object_detection.utils import visualization_utils as viz_utils
-            from object_detection.builders import model_builder
-            from object_detection.utils import config_util as od_config_util
-            TFOD_AVAILABLE = True
-            return tf, label_map_util, viz_utils, model_builder, od_config_util
-        except ImportError as e:
-            st.error(f"""
-            ⚠️ TensorFlow Object Detection API not installed.
-            
-            Error: {str(e)}
-            
-            For local development, install with:
-            ```bash
-            pip install tensorflow tf-models-official
-            ```
-            
-            On Heroku, TensorFlow will be installed automatically on first deployment.
-            """)
-            st.stop()
-    return None
-
-# Build the model and restore weights from SavedModel (cached for fast reruns)
+# Build the model and restore weights from checkpoint (cached for fast reruns)
 @st.cache_resource
 def load_model():
-    """Load the detection model from SavedModel format (cached)."""
-    # Ensure TensorFlow is available
-    result = ensure_tfod_available()
-    if result is None:
-        st.stop()
-    tf, label_map_util, viz_utils, model_builder, od_config_util = result
-    
-    savedmodel_dir = os.path.join(paths['CHECKPOINT_PATH'], 'export', 'saved_model')
-    
-    # Fallback: if export doesn't exist, try direct checkpoint load
-    if not os.path.exists(savedmodel_dir):
-        st.warning(f"SavedModel not found at {savedmodel_dir}. Attempting legacy checkpoint load...")
-        # For legacy checkpoints, we'd need object_detection API which is too heavy
-        # Instead, raise a helpful error
-        raise RuntimeError(
-            f"SavedModel not found. Please ensure the model has been exported.\n"
-            f"Expected location: {savedmodel_dir}"
-        )
-    
-    # Load the SavedModel
-    detection_model = tf.saved_model.load(savedmodel_dir)
+    """Load and restore the detection model from checkpoint (cached)."""
+    configs = od_config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
+    detection_model = model_builder.build(model_config=configs['model'], is_training=False)
+    ckpt = tf.compat.v2.train.Checkpoint(model=detection_model)
+    ckpt.restore(os.path.join(paths['CHECKPOINT_PATH'], 'ckpt-3')).expect_partial()
     return detection_model
 
+detection_model = load_model()
+
+
 def model_exists():
-    """Return True if the exported SavedModel exists locally."""
-    savedmodel_dir = os.path.join(paths['CHECKPOINT_PATH'], 'export', 'saved_model')
-    return os.path.exists(os.path.join(savedmodel_dir, 'saved_model.pb'))
+    """Return True if the checkpoint or exported SavedModel exists locally."""
+    ckpt_dir = Path(paths['CHECKPOINT_PATH'])
+    # Check for specific checkpoint files or an exported saved_model
+    if ckpt_dir.exists():
+        # checkpoint files (ckpt-*.index) or saved_model
+        patterns = ['ckpt-3.index', 'saved_model.pb', 'pipeline.config']
+        for p in patterns:
+            if (ckpt_dir / p).exists():
+                return True
+        # also check inside export/saved_model
+        if (ckpt_dir / 'export' / 'saved_model' / 'saved_model.pb').exists():
+            return True
+    return False
+
 
 def ensure_model_available():
     """Ensure model files are present; if not, attempt to download using MODEL_URL env var.
@@ -222,31 +178,25 @@ def ensure_model_available():
 
     model_url = os.environ.get('MODEL_URL') or globals().get('DEFAULT_MODEL_URL')
     if not model_url:
-        raise RuntimeError('Model not found and MODEL_URL not provided.')
+        # give a clear error to the user (Streamlit will show this when run)
+        raise RuntimeError('Model not found at "{}" and MODEL_URL not provided.'.format(paths['CHECKPOINT_PATH']))
 
     # Call the downloader script in the repo root
     downloader = Path(__file__).parent / 'download_model.py'
     if not downloader.exists():
-        raise RuntimeError('Model missing and downloader not found.')
-    
-    # Import downloader and run
-    import subprocess
-    result = subprocess.run(
-        ['python', str(downloader), '--url', model_url],
-        capture_output=True,
-        text=True
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f'Model download failed: {result.stderr}')
+        raise RuntimeError('Model missing and downloader not found at {}'.format(downloader))
 
-# Try to load the model
-try:
-    ensure_model_available()
-    detection_model = load_model()
-except Exception as e:
-    st.error(f"❌ Failed to load model: {str(e)}")
-    st.info("Please ensure your model has been exported to SavedModel format.")
-    st.stop()
+    # Run the downloader; it will download/extract into the expected folder
+    try:
+        subprocess.check_call(["python", str(downloader), "--url", model_url])
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError(f'Downloader failed: {e}')
+
+    if not model_exists():
+        raise RuntimeError('Model still not found after downloader ran.')
+
+
+# Ensure model is available before attempting to load it
 try:
     ensure_model_available()
 except Exception as e:
@@ -285,15 +235,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 # Create a mapping from label ids to display names for visualization
-# (replaces label_map_util which requires object_detection API)
-def create_category_index():
-    """Create category index from labels."""
-    category_index = {}
-    for label in labels:
-        category_index[label['id']] = {'id': label['id'], 'name': label['name']}
-    return category_index
-
-category_index = create_category_index()
+category_index = label_map_util.create_category_index_from_labelmap(files['LABELMAP'])
 
 
 def format_score(score, digits=2):
@@ -445,138 +387,101 @@ if IMAGE_PATH is not None:
         else:
             st.write('No detection seen Please upload new image')
 
-def draw_boxes_on_image(image_np, boxes, classes, scores, category_index, min_score_thresh=0.5):
-    """Draw bounding boxes and labels on image (replaces viz_utils.visualize_boxes_and_labels_on_image_array)."""
-    im_height, im_width = image_np.shape[:2]
-    
-    for i in range(len(scores)):
-        if scores[i] < min_score_thresh:
+    # Visualize bounding boxes and labels on the image
+    viz_utils.visualize_boxes_and_labels_on_image_array(
+        image_np_with_detections,
+        detections['detection_boxes'],
+        detections['detection_classes'] + label_id_offset,
+        detections['detection_scores'],
+        category_index,
+        use_normalized_coordinates=True,
+        max_boxes_to_draw=5,
+        min_score_thresh=.8,
+        agnostic_mode=False)
+
+    # Enhance visualization: draw thicker boxes and label backgrounds for better visibility
+    min_score = 0.8  # same threshold used in viz_utils call above
+    h, w, _ = image_np_with_detections.shape
+    for i in range(min(5, int(detections.get('num_detections', 0)))):
+        score = float(detections['detection_scores'][i])
+        if score < min_score:
             continue
-        
-        # Convert normalized coordinates to pixel coordinates
-        ymin, xmin, ymax, xmax = boxes[i]
-        left, right = int(xmin * im_width), int(xmax * im_width)
-        top, bottom = int(ymin * im_height), int(ymax * im_height)
-        
-        class_id = int(classes[i]) + 1  # label_id_offset
-        score = scores[i]
-        
-        # Get class name
-        class_name = category_index.get(class_id, {}).get('name', f'Class {class_id}')
-        
-        # Draw bounding box
-        color = (0, 255, 0) if class_id == 1 else (0, 0, 255)  # Green for healthy, red for infected
-        cv2.rectangle(image_np, (left, top), (right, bottom), color, 3)
-        
-        # Draw label
-        label = f'{class_name}: {score:.2%}'
-        font_scale = 0.7
-        thickness = 2
-        text_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, font_scale, thickness)[0]
-        
-        # Background for text
-        text_x, text_y = left, max(top - 10, 0)
-        cv2.rectangle(image_np, (text_x, text_y - text_size[1] - 5),
-                     (text_x + text_size[0] + 5, text_y + 5), color, -1)
-        
-        # Draw text
-        cv2.putText(image_np, label, (text_x + 2, text_y - 3),
-                   cv2.FONT_HERSHEY_SIMPLEX, font_scale, (255, 255, 255), thickness)
-    
-    return image_np
+        box = detections['detection_boxes'][i]
+        ymin, xmin, ymax, xmax = box
+        left, right, top, bottom = int(xmin * w), int(xmax * w), int(ymin * h), int(ymax * h)
+        cls = int(detections['detection_classes'][i]) + label_id_offset
+        class_name = category_index.get(cls, {'name': 'N/A'})['name']
+        label = f"{class_name}: {int(score * 100)}%"
+        # Pick color based on class (green for healthy, red for infected)
+        color = (0, 200, 0) if class_name.lower().startswith('healthy') or cls == 1 else (0, 0, 200)
+        # Draw thick rectangle
+        cv2.rectangle(image_np_with_detections, (left, top), (right, bottom), color, thickness=4)
+        # Draw filled rectangle for label background
+        (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
+        cv2.rectangle(image_np_with_detections, (left, max(0, top - text_h - 10)), (left + text_w, top), color, -1)
+        cv2.putText(image_np_with_detections, label, (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
 
-# Visualize bounding boxes and labels on the image
-image_np_with_detections = draw_boxes_on_image(
-    image_np_with_detections,
-    detections['detection_boxes'],
-    detections['detection_classes'],
-    detections['detection_scores'],
-    category_index,
-    min_score_thresh=0.5)
+    # Convert to RGB for Streamlit
+    annotated_rgb = cv2.cvtColor(image_np_with_detections, cv2.COLOR_BGR2RGB)
 
-# Enhance visualization: draw thicker boxes and label backgrounds for better visibility
-min_score = 0.5
-h, w, _ = image_np_with_detections.shape
-for i in range(min(5, int(detections.get('num_detections', 0)))):
-    score = float(detections['detection_scores'][i])
-    if score < min_score:
-        continue
-    box = detections['detection_boxes'][i]
-    ymin, xmin, ymax, xmax = box
-    left, right, top, bottom = int(xmin * w), int(xmax * w), int(ymin * h), int(ymax * h)
-    cls = int(detections['detection_classes'][i]) + label_id_offset
-    class_name = category_index.get(cls, {'name': 'N/A'})['name']
-    label = f"{class_name}: {int(score * 100)}%"
-    # Pick color based on class (green for healthy, red for infected)
-    color = (0, 200, 0) if class_name.lower().startswith('healthy') or cls == 1 else (0, 0, 200)
-    # Draw thick rectangle
-    cv2.rectangle(image_np_with_detections, (left, top), (right, bottom), color, thickness=4)
-    # Draw filled rectangle for label background
-    (text_w, text_h), baseline = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.8, 2)
-    cv2.rectangle(image_np_with_detections, (left, max(0, top - text_h - 10)), (left + text_w, top), color, -1)
-    cv2.putText(image_np_with_detections, label, (left, top - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
-
-# Convert to RGB for Streamlit
-annotated_rgb = cv2.cvtColor(image_np_with_detections, cv2.COLOR_BGR2RGB)
-
-# Prepare a presentable 800x800 final image using PIL
-try:
-    pil_img = Image.fromarray(annotated_rgb)
-
-    # Resize while preserving aspect ratio to fit within 800x800
-    target_size = (800, 800)
-    pil_copy = pil_img.copy()
-    pil_copy.thumbnail(target_size, Image.LANCZOS)
-
-    # Create white background and paste centered
-    final_img = Image.new('RGB', target_size, (255, 255, 255))
-    paste_x = (target_size[0] - pil_copy.width) // 2
-    paste_y = (target_size[1] - pil_copy.height) // 2
-    final_img.paste(pil_copy, (paste_x, paste_y))
-
-    # Draw a small legend and title on the final image
-    draw = ImageDraw.Draw(final_img)
+    # Prepare a presentable 800x800 final image using PIL
     try:
-        font = ImageFont.truetype('arial.ttf', 18)
-        font_small = ImageFont.truetype('arial.ttf', 14)
-    except Exception:
-        font = ImageFont.load_default()
-        font_small = ImageFont.load_default()
+        pil_img = Image.fromarray(annotated_rgb)
 
-    # Title
-    title = 'Detections'
-    tw, th = draw.textsize(title, font=font)
-    draw.text(((target_size[0] - tw) / 2, 8), title, fill=(0, 0, 0), font=font)
+        # Resize while preserving aspect ratio to fit within 800x800
+        target_size = (800, 800)
+        pil_copy = pil_img.copy()
+        pil_copy.thumbnail(target_size, Image.LANCZOS)
 
-    # Legend (top-left corner)
-    legend_x = 12
-    legend_y = 40
-    legend_gap = 6
-    legend_items = [(1, 'Healthy Pod', (0, 200, 0)), (2, 'Infected Pod', (200, 0, 0))]
-    box_size = 16
-    for idx, name, color in legend_items:
-        draw.rectangle([legend_x, legend_y, legend_x + box_size, legend_y + box_size], fill=color)
-        draw.text((legend_x + box_size + 6, legend_y - 2), name, fill=(0, 0, 0), font=font_small)
-        legend_y += box_size + legend_gap
+        # Create white background and paste centered
+        final_img = Image.new('RGB', target_size, (255, 255, 255))
+        paste_x = (target_size[0] - pil_copy.width) // 2
+        paste_y = (target_size[1] - pil_copy.height) // 2
+        final_img.paste(pil_copy, (paste_x, paste_y))
 
-    # Convert final image to bytes for Streamlit display and download
-    buf = io.BytesIO()
-    final_img.save(buf, format='PNG')
-    buf.seek(0)
-    img_bytes = buf.getvalue()
+        # Draw a small legend and title on the final image
+        draw = ImageDraw.Draw(final_img)
+        try:
+            font = ImageFont.truetype('arial.ttf', 18)
+            font_small = ImageFont.truetype('arial.ttf', 14)
+        except Exception:
+            font = ImageFont.load_default()
+            font_small = ImageFont.load_default()
 
-    # Show the 800x800 presentable image
-    st.image(final_img, caption='Annotated (800x800)', use_column_width=False, width=800)
+        # Title
+        title = 'Detections'
+        tw, th = draw.textsize(title, font=font)
+        draw.text(((target_size[0] - tw) / 2, 8), title, fill=(0, 0, 0), font=font)
 
-    # Provide downloads: full-size PNG and open in new tab link
-    st.download_button('Download annotated (800x800)', data=img_bytes, file_name='annotated_800.png', mime='image/png')
-    data_url = "data:image/png;base64," + __import__('base64').b64encode(img_bytes).decode('utf-8')
-    st.markdown(f"[Open annotated image in new tab]({data_url})", unsafe_allow_html=True)
+        # Legend (top-left corner)
+        legend_x = 12
+        legend_y = 40
+        legend_gap = 6
+        legend_items = [(1, 'Healthy Pod', (0, 200, 0)), (2, 'Infected Pod', (200, 0, 0))]
+        box_size = 16
+        for idx, name, color in legend_items:
+            draw.rectangle([legend_x, legend_y, legend_x + box_size, legend_y + box_size], fill=color)
+            draw.text((legend_x + box_size + 6, legend_y - 2), name, fill=(0, 0, 0), font=font_small)
+            legend_y += box_size + legend_gap
 
-except Exception as e:
-    # Fallback to original display if anything goes wrong
-    st.image(annotated_rgb, caption='Detections', use_column_width=True)
-    st.write('Could not create 800x800 presentable image:', e)
+        # Convert final image to bytes for Streamlit display and download
+        buf = io.BytesIO()
+        final_img.save(buf, format='PNG')
+        buf.seek(0)
+        img_bytes = buf.getvalue()
+
+        # Show the 800x800 presentable image
+        st.image(final_img, caption='Annotated (800x800)', use_column_width=False, width=800)
+
+        # Provide downloads: full-size PNG and open in new tab link
+        st.download_button('Download annotated (800x800)', data=img_bytes, file_name='annotated_800.png', mime='image/png')
+        data_url = "data:image/png;base64," + __import__('base64').b64encode(img_bytes).decode('utf-8')
+        st.markdown(f"[Open annotated image in new tab]({data_url})", unsafe_allow_html=True)
+
+    except Exception as e:
+        # Fallback to original display if anything goes wrong
+        st.image(annotated_rgb, caption='Detections', use_column_width=True)
+        st.write('Could not create 800x800 presentable image:', e)
 
 # -----------------------------
 # Footer: show profile links if configured

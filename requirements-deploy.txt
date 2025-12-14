@@ -1,8 +1,0 @@
-﻿streamlit
-numpy
-opencv-python-headless
-Pillow
-tensorflow-cpu
-protobuf
-gdown
-requests

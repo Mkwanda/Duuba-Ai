@@ -1,7 +1,0 @@
-streamlit
-opencv-python-headless
-Pillow
-gdown
-requests
-scikit-image
-tensorflow-cpu

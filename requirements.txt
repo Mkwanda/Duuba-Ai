@@ -3,25 +3,22 @@
 
 # Machine Learning & Object Detection
 tensorflow==2.10.1
-object-detection>=0.0.3,<0.0.4
-
-
+tf-models-official==2.12.0
 
 # Image Processing
-opencv-python==4.7.0.72
 opencv-python-headless==4.8.0.76
 Pillow==9.5.0
 numpy==1.23.5
 
 # Web Framework
-streamlit>=1.20
+streamlit==1.27.0
 
 # Protobuf (required for TF Object Detection API)
-protobuf==3.19.6
+protobuf==3.20.2
 
 # Model Download Utilities (optional - for Google Drive downloads)
 requests==2.28.2
 gdown
 
-# Note: opencv-python-headless is used instead of opencv-python for cloud deployments
-# It excludes GUI dependencies which aren't needed in web servers
+# Note: tf-models-official includes the complete Object Detection API with compiled protos
+# opencv-python-headless is used for cloud deployments (no GUI dependencies)

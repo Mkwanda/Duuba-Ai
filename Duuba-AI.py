@@ -10,7 +10,6 @@
 # and visualizes results.
 
 # Standard library imports
-from distutils.sysconfig import get_python_inc
 import os
 
 # Third-party imports

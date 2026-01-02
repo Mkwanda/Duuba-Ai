@@ -12,7 +12,7 @@ numpy==1.23.5
 
 # Web Framework
 streamlit>=1.20
-PyYAML==6.0
+PyYAML>=5.0
 
 # Protobuf (required for TF Object Detection API)
 protobuf==3.19.6

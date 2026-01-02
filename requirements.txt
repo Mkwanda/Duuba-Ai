@@ -1,12 +1,13 @@
 tensorflow-io-gcs-filesystem==0.31.0
 tensorflow==2.10.1
 streamlit>=1.20
-numpy====1.23.5
+numpy==1.23.5
 opencv-python-headless==4.8.0.76
-Pillow====9.5.0
+Pillow==9.5.0
 matplotlib==3.7.1
 gdown
 requests
 scikit-image
+
 
 

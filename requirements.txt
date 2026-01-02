@@ -3,7 +3,7 @@
 
 # Machine Learning & Object Detection
 tensorflow==2.10.1
-object-detection==0.0.1
+object-detection>=0.0.3,<0.0.4
 
 
 

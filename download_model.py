@@ -119,7 +119,7 @@ def download_and_extract(url: str, dest: Path):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', help='URL to model archive (tar.gz or zip).')
-    parser.add_argument('--dest', default=os.path.join('Cocoa','Tensorflow','workspace','models','my_ssd_mobnetpod'), help='Destination folder to extract into')
+    parser.add_argument('--dest', default='my_ssd_mobnetpod', help='Destination folder to extract into')
     args = parser.parse_args()
 
     url = args.url or os.environ.get('MODEL_URL')

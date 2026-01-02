@@ -147,6 +147,37 @@ Adjust the slider in the sidebar to filter detections by confidence (0.0 - 1.0).
 
 ---
 
+## 🌐 Web Deployment
+
+Duuba-AI is optimized for cloud deployment with simplified paths and environment variables. See [WEB_DEPLOYMENT.md](WEB_DEPLOYMENT.md) for detailed instructions.
+
+### Quick Deploy Options:
+
+#### Streamlit Cloud (Recommended for beginners)
+1. Push code to GitHub
+2. Go to [share.streamlit.io](https://share.streamlit.io)
+3. Connect repository and add MODEL_URL secret
+4. Deploy with one click!
+
+#### Heroku
+```bash
+heroku create your-app-name
+heroku config:set MODEL_URL="your-google-drive-url"
+git push heroku main
+```
+
+#### Docker
+```bash
+docker build -t duuba-ai .
+docker run -p 8501:8501 -e MODEL_URL="your-url" duuba-ai
+```
+
+### Environment Variables
+- `MODEL_URL`: URL to download model (Google Drive, S3, etc.)
+- `PORT`: Server port (auto-detected on most platforms)
+
+---
+
 ## 🐳 Docker Deployment
 
 ### Build and Run Locally

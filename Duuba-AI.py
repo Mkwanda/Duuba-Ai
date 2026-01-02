@@ -26,27 +26,28 @@ PRETRAINED_MODEL_URL = 'http://download.tensorflow.org/models/object_detection/t
 TF_RECORD_SCRIPT_NAME = 'generate_tfrecord.py'
 LABEL_MAP_NAME = 'label_map.pbtxt'
 
-# File system layout used throughout the project. Change these if your workspace moves.
+# File system layout - simplified for web deployment
+# Uses relative paths that work in Docker/Heroku/Cloud environments
 paths = {
-    'WORKSPACE_PATH': os.path.join('Cocoa','Tensorflow', 'workspace'),
-    'SCRIPTS_PATH': os.path.join('Cocoa','Tensorflow','scripts'),
-    'APIMODEL_PATH': os.path.join('Cocoa','Tensorflow','models'),
-    'ANNOTATION_PATH': os.path.join('Cocoa','Tensorflow', 'workspace','annotations'),
-    'IMAGE_PATH': os.path.join('Cocoa','Tensorflow', 'workspace','images'),
-    'MODEL_PATH': os.path.join('Cocoa','Tensorflow', 'workspace','models'),
-    'PRETRAINED_MODEL_PATH': os.path.join('Cocoa','Tensorflow', 'workspace','pre-trained-models'),
-    'CHECKPOINT_PATH': os.path.join('Cocoa','Tensorflow', 'workspace','models',CUSTOM_MODEL_NAME),
-    'OUTPUT_PATH': os.path.join('Cocoa','Tensorflow', 'workspace','models',CUSTOM_MODEL_NAME, 'export'),
-    'TFJS_PATH': os.path.join('Cocoa','Tensorflow', 'workspace','models',CUSTOM_MODEL_NAME, 'tfjsexport'),
-    'TFLITE_PATH': os.path.join('Cocoa','Tensorflow', 'workspace','models',CUSTOM_MODEL_NAME, 'tfliteexport'),
-    'PROTOC_PATH': os.path.join('Cocoa','Tensorflow','protoc')
+    'WORKSPACE_PATH': 'workspace',
+    'SCRIPTS_PATH': 'scripts',
+    'APIMODEL_PATH': 'models',
+    'ANNOTATION_PATH': 'annotations',
+    'IMAGE_PATH': 'images',
+    'MODEL_PATH': CUSTOM_MODEL_NAME,
+    'PRETRAINED_MODEL_PATH': 'pre-trained-models',
+    'CHECKPOINT_PATH': CUSTOM_MODEL_NAME,
+    'OUTPUT_PATH': os.path.join(CUSTOM_MODEL_NAME, 'export'),
+    'TFJS_PATH': os.path.join(CUSTOM_MODEL_NAME, 'tfjsexport'),
+    'TFLITE_PATH': os.path.join(CUSTOM_MODEL_NAME, 'tfliteexport'),
+    'PROTOC_PATH': 'protoc'
 }
 
 # Helpful file paths derived from `paths`
 files = {
-    'PIPELINE_CONFIG': os.path.join('Cocoa','Tensorflow', 'workspace','models', CUSTOM_MODEL_NAME, 'pipeline.config'),
+    'PIPELINE_CONFIG': os.path.join(CUSTOM_MODEL_NAME, 'pipeline.config'),
     'TF_RECORD_SCRIPT': os.path.join(paths['SCRIPTS_PATH'], TF_RECORD_SCRIPT_NAME),
-    'LABELMAP': os.path.join(paths['ANNOTATION_PATH'], LABEL_MAP_NAME)
+    'LABELMAP': os.path.join('annotations', LABEL_MAP_NAME)
 }
 
 # -----------------------------
@@ -61,11 +62,7 @@ DEFAULT_MODEL_URL = 'https://drive.google.com/file/d/1Biw-K0DlbOAxGVEm4wy2LLGdDS
 # Ensure workspace folders exist (this block can be skipped if folders already present)
 for path in paths.values():
     if not os.path.exists(path):
-        # These lines were originally written for notebook environments; keep as-is
-        if os.name == 'posix':
-            get_ipython().system('mkdir -p {path}')
-        if os.name == 'nt':
-            get_python_inc().system('mkdir {path}')
+        os.makedirs(path, exist_ok=True)
 
 
 # Optional setup steps commented out (git clone of TF models, protobuf install, etc.)
@@ -83,7 +80,8 @@ import object_detection
 # Labels used by this model; update if label ids or names change.
 labels = [{'name':'Healthy Pod', 'id':1}, {'name':'Infected Pod', 'id':2}]
 
-# Write the label map file used by the TF OD API
+# Write the label map file used by the TF OD API (create directory if needed)
+os.makedirs(os.path.dirname(files['LABELMAP']), exist_ok=True)
 with open(files['LABELMAP'], 'w') as f:
     for label in labels:
         f.write('item { \n')
@@ -106,28 +104,31 @@ from google.protobuf import text_format
 import subprocess
 from pathlib import Path
 
-# Read the pipeline config and merge into protobuf object
-config = config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
-
-pipeline_config = pipeline_pb2.TrainEvalPipelineConfig()
-with tf.io.gfile.GFile(files['PIPELINE_CONFIG'], "r") as f:
-    proto_str = f.read()
-    text_format.Merge(proto_str, pipeline_config)
-
-# Update a few fields for this fine-tuning setup (num classes, checkpoint, input paths)
-pipeline_config.model.ssd.num_classes = len(labels)
-pipeline_config.train_config.batch_size = 4
-pipeline_config.train_config.fine_tune_checkpoint = os.path.join(paths['PRETRAINED_MODEL_PATH'], PRETRAINED_MODEL_NAME, 'checkpoint', 'ckpt-3')
-pipeline_config.train_config.fine_tune_checkpoint_type = "detection"
-pipeline_config.train_input_reader.label_map_path = files['LABELMAP']
-pipeline_config.train_input_reader.tf_record_input_reader.input_path[:] = [os.path.join(paths['ANNOTATION_PATH'], 'train.record')]
-pipeline_config.eval_input_reader[0].label_map_path = files['LABELMAP']
-pipeline_config.eval_input_reader[0].tf_record_input_reader.input_path[:] = [os.path.join(paths['ANNOTATION_PATH'], 'test.record')]
-
-# Persist the edited pipeline config back to disk
-config_text = text_format.MessageToString(pipeline_config)
-with tf.io.gfile.GFile(files['PIPELINE_CONFIG'], "wb") as f:
-    f.write(config_text)
+# Pipeline config updates - only if file exists (skip if using pre-configured model)
+if os.path.exists(files['PIPELINE_CONFIG']):
+    try:
+        config = config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
+        pipeline_config = pipeline_pb2.TrainEvalPipelineConfig()
+        with tf.io.gfile.GFile(files['PIPELINE_CONFIG'], "r") as f:
+            proto_str = f.read()
+            text_format.Merge(proto_str, pipeline_config)
+        
+        # Update a few fields for this fine-tuning setup (num classes, checkpoint, input paths)
+        pipeline_config.model.ssd.num_classes = len(labels)
+        pipeline_config.train_config.batch_size = 4
+        pipeline_config.train_config.fine_tune_checkpoint = os.path.join(paths['CHECKPOINT_PATH'], 'ckpt-3')
+        pipeline_config.train_config.fine_tune_checkpoint_type = "detection"
+        pipeline_config.train_input_reader.label_map_path = files['LABELMAP']
+        pipeline_config.train_input_reader.tf_record_input_reader.input_path[:] = [os.path.join(paths['ANNOTATION_PATH'], 'train.record')]
+        pipeline_config.eval_input_reader[0].label_map_path = files['LABELMAP']
+        pipeline_config.eval_input_reader[0].tf_record_input_reader.input_path[:] = [os.path.join(paths['ANNOTATION_PATH'], 'test.record')]
+        
+        # Persist the edited pipeline config back to disk
+        config_text = text_format.MessageToString(pipeline_config)
+        with tf.io.gfile.GFile(files['PIPELINE_CONFIG'], "wb") as f:
+            f.write(config_text)
+    except Exception as e:
+        st.warning(f'Could not update pipeline config: {e}. Using existing config.')
 
 
 # -----------------------------
@@ -143,13 +144,17 @@ from object_detection.utils import config_util as od_config_util
 @st.cache_resource
 def load_model():
     """Load and restore the detection model from checkpoint (cached)."""
+    if not os.path.exists(files['PIPELINE_CONFIG']):
+        raise FileNotFoundError(f"Pipeline config not found at {files['PIPELINE_CONFIG']}. Please ensure the model is downloaded.")
+    
     configs = od_config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
     detection_model = model_builder.build(model_config=configs['model'], is_training=False)
     ckpt = tf.compat.v2.train.Checkpoint(model=detection_model)
     ckpt.restore(os.path.join(paths['CHECKPOINT_PATH'], 'ckpt-3')).expect_partial()
     return detection_model
 
-detection_model = load_model()
+# Deferred model loading - will be called after ensure_model_available()
+detection_model = None
 
 
 def model_exists():
@@ -199,10 +204,12 @@ def ensure_model_available():
 # Ensure model is available before attempting to load it
 try:
     ensure_model_available()
+    detection_model = load_model()
 except Exception as e:
     # When running as a module this will propagate; for Streamlit show a user-friendly message
     try:
         st.error(f'Model unavailable: {e}')
+        st.info('Please ensure the model files are in the correct location or set the MODEL_URL environment variable.')
     except Exception:
         pass
     raise

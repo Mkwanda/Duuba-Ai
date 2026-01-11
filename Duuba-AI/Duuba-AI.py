@@ -100,14 +100,10 @@ with open(files['LABELMAP'], 'w') as f:
 # Update pipeline config for transfer learning
 # -----------------------------
 import tensorflow as tf
-from object_detection.utils import config_util
 from object_detection.protos import pipeline_pb2
 from google.protobuf import text_format
 import subprocess
 from pathlib import Path
-
-# Read the pipeline config and merge into protobuf object
-config = config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
 
 pipeline_config = pipeline_pb2.TrainEvalPipelineConfig()
 with tf.io.gfile.GFile(files['PIPELINE_CONFIG'], "r") as f:
@@ -137,13 +133,44 @@ import os
 from object_detection.utils import label_map_util
 from object_detection.utils import visualization_utils as viz_utils
 from object_detection.builders import model_builder
-from object_detection.utils import config_util as od_config_util
+
+# Some packaging/distribution of object_detection may not expose config_util.
+# Provide a lightweight fallback to parse pipeline configs if config_util is unavailable.
+try:
+    from object_detection.utils import config_util as od_config_util
+except Exception:
+    od_config_util = None
+
+
+def _get_configs_from_pipeline_file(path):
+    """Fallback to parse pipeline.config into a configs-like dict.
+
+    Returns a dict that contains at least the 'model' key used by model_builder.
+    """
+    from object_detection.protos import pipeline_pb2
+    from google.protobuf import text_format
+    import tensorflow as _tf
+
+    pipeline_config = pipeline_pb2.TrainEvalPipelineConfig()
+    with _tf.io.gfile.GFile(path, "r") as f:
+        proto_str = f.read()
+        text_format.Merge(proto_str, pipeline_config)
+
+    return {
+        'model': pipeline_config.model,
+        'train_config': pipeline_config.train_config,
+        'train_input_config': pipeline_config.train_input_reader,
+        'eval_input_config': pipeline_config.eval_input_reader,
+    }
 
 # Build the model and restore weights from checkpoint (cached for fast reruns)
 @st.cache_resource
 def load_model():
     """Load and restore the detection model from checkpoint (cached)."""
-    configs = od_config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
+    if od_config_util:
+        configs = od_config_util.get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
+    else:
+        configs = _get_configs_from_pipeline_file(files['PIPELINE_CONFIG'])
     detection_model = model_builder.build(model_config=configs['model'], is_training=False)
     ckpt = tf.compat.v2.train.Checkpoint(model=detection_model)
     ckpt.restore(os.path.join(paths['CHECKPOINT_PATH'], 'ckpt-3')).expect_partial()

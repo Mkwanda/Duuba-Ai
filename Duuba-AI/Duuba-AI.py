@@ -74,6 +74,24 @@ for path in paths.values():
 #     get_ipython().system("git clone https://github.com/tensorflow/models {paths['APIMODEL_PATH']}")
 # get_ipython().system('pip install protobuf==3.19.6')
 
+# Try to import pipeline protos; if missing, compile them into a local `vendor` package.
+try:
+    from object_detection.protos import pipeline_pb2
+except Exception:
+    # Run the compile script to generate vendor/object_detection/protos
+    compile_script = Path(__file__).parent / 'scripts' / 'compile_protos.py'
+    if not compile_script.exists():
+        raise RuntimeError('pipeline protos missing and compile_protos.py not found')
+    print('pipeline protos missing; compiling via', compile_script)
+    import subprocess, sys
+    res = subprocess.run([sys.executable, str(compile_script)])
+    if res.returncode != 0:
+        raise RuntimeError('Failed to compile object_detection protos')
+    # Ensure vendor is importable
+    sys.path.insert(0, str(Path(__file__).parent / 'vendor'))
+    # Retry import
+    from object_detection.protos import pipeline_pb2
+
 
 # -----------------------------
 # Object detection imports and label map creation

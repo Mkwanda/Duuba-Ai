@@ -14,10 +14,9 @@ dependencies = [
     "opencv-python (==4.7.0.72)",
     "opencv-python-headless (==4.8.0.76)",
     "matplotlib (==3.7.1)",
-    "numpy (==1.23.5)",
-    "pillow (==9.5.0)",
     "object-detection (>=0.0.3,<0.0.4)",
-    "grpcio-tools (>=1.56.0)"
+    "numpy (==1.23.5)",
+    "pillow (==9.5.0)"
 ]
 
 [tool.poetry]

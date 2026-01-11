@@ -17,8 +17,7 @@ dependencies = [
     "numpy (==1.23.5)",
     "pillow (==9.5.0)",
     "object-detection (>=0.0.3,<0.0.4)",
-    "grpcio-tools (>=1.56.0)",
-    "protobuf (==3.19.6)"
+    "grpcio-tools (>=1.56.0)"
 ]
 
 [tool.poetry]

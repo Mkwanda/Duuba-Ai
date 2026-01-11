@@ -23,8 +23,8 @@ def ensure_grpc_tools():
         import grpc_tools  # noqa: F401
         return
     except Exception:
-        print('grpc_tools not found; installing grpcio-tools and protobuf...')
-        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'grpcio-tools', 'protobuf==3.19.6'])
+        print('grpc_tools not found; installing grpcio-tools...')
+        subprocess.check_call([sys.executable, '-m', 'pip', 'install', 'grpcio-tools'])
 
 def clone_models(tmpdir):
     dst = Path(tmpdir) / 'models'
